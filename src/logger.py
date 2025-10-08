@@ -42,9 +42,23 @@ class LogSyncState(ISyncState):
         with self.lock:
             return self.msgs.copy()
 
-    def Write(self, entry: LogEntry):
+    def Write(self, entry: LogEntry, level: LogLevel):
         with self.lock:
             self.msgs.append(entry)
+            prefix: str = ""
+
+            match level:
+                case LogLevel.TRACE:
+                    prefix = bcolors.OKBLUE
+                case LogLevel.INFO:
+                    prefix = bcolors.OKGREEN
+                case LogLevel.WARN:
+                    prefix = bcolors.WARNING
+                case LogLevel.ERROR:
+                    prefix = bcolors.FAIL
+                case LogLevel.FATAL:
+                    prefix = bcolors.FAIL + bcolors.UNDERLINE
+            print(f"{prefix}{entry}{bcolors.ENDC}")
 
 
 class bcolors:
@@ -69,29 +83,24 @@ class Logger(metaclass=Singleton):
 
     def Trace(self, msg: str):
         if self.log_level.value <= LogLevel.TRACE.value:
-            entry = LogEntry(datetime.now(), LogLevel.TRACE, msg)            
-            self.log_state.Write(entry)
-            print(f"{bcolors.OKBLUE}{entry}{bcolors.ENDC}")
+            entry = LogEntry(datetime.now(), LogLevel.TRACE, msg)
+            self.log_state.Write(entry, LogLevel.TRACE)
 
     def Info(self, msg: str):
         if self.log_level.value <= LogLevel.INFO.value:
             entry = LogEntry(datetime.now(), LogLevel.INFO, msg)
-            self.log_state.Write(entry)
-            print(f"{bcolors.OKGREEN}{entry}{bcolors.ENDC}")       
+            self.log_state.Write(entry, LogLevel.INFO)
 
     def Warn(self, msg: str):
         if self.log_level.value <= LogLevel.WARN.value:
             entry = LogEntry(datetime.now(), LogLevel.WARN, msg)
-            self.log_state.Write(entry)
-            print(f"{bcolors.WARNING}{entry}{bcolors.ENDC}")
+            self.log_state.Write(entry, LogLevel.WARN)
 
     def Error(self, msg: str):
         if self.log_level.value <= LogLevel.ERROR.value:
             entry = LogEntry(datetime.now(), LogLevel.ERROR, msg)
-            self.log_state.Write(entry)
-            print(f"{bcolors.FAIL}{entry}{bcolors.ENDC}")
+            self.log_state.Write(entry, LogLevel.ERROR)
 
     def Fatal(self, msg: str):
         entry = LogEntry(datetime.now(), LogLevel.FATAL, msg)
-        self.log_state.Write(entry)
-        print(f"{bcolors.FAIL}{bcolors.UNDERLINE}{entry}{bcolors.ENDC}")
+        self.log_state.Write(entry, LogLevel.FATAL)

@@ -18,27 +18,35 @@ class ISyncState:
 
 class ReportState(Enum):
     INIT = 0,
-    DOWNLOADED = 1,
-    NOT_DOWNLOADED = 2
+    STAGED = 1,
+    DOWNLOADED = 2,
+    NOT_DOWNLOADED = 3,
+    DONE = 4
 
 
 @dataclass
 class Report:
     name: str
+    id: int
     url: str
-    path: str
     status: ReportState
 
 
 class ReportSyncState(ISyncState):
     def __init__(self):
         super().__init__()
-        self.report: list[Report] = []
+        self.reports: list[Report] = []
 
-    def Read(self) -> Report:
+    def Read(self) -> list[Report]:
         with self.lock:
-            return self.report
+            return self.reports.copy()
 
     def Write(self, _report: Report):
         with self.lock:
-            self.report = _report
+            self.reports.append(_report)
+
+    def Count(self):
+        with self.lock:
+            return len(self.reports)
+
+

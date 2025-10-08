@@ -1,2 +1,6 @@
 .vscode
+.venv
 __pycache__/
+data/out/*
+data/status.csv
+todo

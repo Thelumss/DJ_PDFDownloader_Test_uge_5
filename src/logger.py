@@ -6,6 +6,9 @@ from state import ISyncState
 
 
 class Singleton(type):
+    """Create a new class for the given class and return it .
+    """
+
     _instances = {}
 
     def __call__(cls, *args, **kwargs):
@@ -29,8 +32,11 @@ class LogEntry:
     severity: LogLevel
     msg: str
 
-    def __repr__(self):
-        return f"[{self.stamp.isoformat()}:{self.severity.name}]:{self.msg}"
+    def __repr__(self) -> str:
+        formatted = (f"{self.stamp.strftime('%Y-%m-%dT%H:%M:%S')}."
+                     f"{self.stamp.microsecond // 10000:02d}")
+        return str(f"[{formatted}:"
+                   f"{self.severity.name}]: {self.msg}")
 
 
 class bcolors:
@@ -45,36 +51,46 @@ class bcolors:
     UNDERLINE = '\033[4m'
 
 
+@dataclass
+class LogSyncData:
+    msgs: deque[LogEntry]
+    duration: float
+
+
 class LogSyncState(ISyncState):
     def __init__(self):
         super().__init__()
-        self.msgs: deque[LogEntry] = deque()
+        self.data = LogSyncData(deque(), 0.0)
 
-    def Read(self) -> deque[LogEntry]:
+    def Read(self) -> LogSyncData:
         """Returns a copy of the message queue.
 
         Returns:
             deque[LogEntry]: message queue
         """
         with self.lock:
-            return self.msgs.copy()
+            return self.data
 
-    def Write(self, entry: LogEntry):
+    def Write(self, data: LogSyncData):
         """Writes the given log entry to the queue.
 
         Args:
             entry (LogEntry): [description]
         """
         with self.lock:
-            self.msgs.append(entry)
+            self.data = data
+
+    def Append(self, entry: LogEntry):
+        with self.lock:
+            self.data.msgs.append(entry)
 
     def Count(self):
         with self.lock:
-            return len(self.msgs)
+            return len(self.data.msgs)
 
     def Pop(self):
         with self.lock:
-            return self.msgs.pop()
+            return self.data.msgs.popleft()
 
 
 class Logger(metaclass=Singleton):
@@ -98,7 +114,7 @@ class Logger(metaclass=Singleton):
         """
         if self.log_level.value <= LogLevel.TRACE.value:
             entry = LogEntry(datetime.now(), LogLevel.TRACE, msg)
-            self.log_state.Write(entry)
+            self.log_state.Append(entry)
 
     def Info(self, msg: str):
         """Log an info message.
@@ -108,7 +124,7 @@ class Logger(metaclass=Singleton):
         """
         if self.log_level.value <= LogLevel.INFO.value:
             entry = LogEntry(datetime.now(), LogLevel.INFO, msg)
-            self.log_state.Write(entry)
+            self.log_state.Append(entry)
 
     def Warn(self, msg: str):
         """Log a warning message.
@@ -118,7 +134,7 @@ class Logger(metaclass=Singleton):
         """
         if self.log_level.value <= LogLevel.WARN.value:
             entry = LogEntry(datetime.now(), LogLevel.WARN, msg)
-            self.log_state.Write(entry)
+            self.log_state.Append(entry)
 
     def Error(self, msg: str):
         """Log an error message.
@@ -128,7 +144,7 @@ class Logger(metaclass=Singleton):
         """
         if self.log_level.value <= LogLevel.ERROR.value:
             entry = LogEntry(datetime.now(), LogLevel.ERROR, msg)
-            self.log_state.Write(entry)
+            self.log_state.Append(entry)
 
     def Fatal(self, msg: str):
         """Log a fatal error message.
@@ -140,7 +156,7 @@ class Logger(metaclass=Singleton):
             Exception: message to log
         """
         entry = LogEntry(datetime.now(), LogLevel.FATAL, msg)
-        self.log_state.Write(entry)
+        self.log_state.Append(entry)
         raise Exception(entry)
 
     def GetState(self) -> LogSyncState:

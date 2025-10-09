@@ -8,8 +8,9 @@ import ssl
 import csv
 import os
 import time
+from timer import Timer
 from logger import Logger, LogEntry, LogLevel, bcolors, LogSyncState
-from state import ReportSyncState, Report, ReportState
+from state import ReportSyncState, ReportSyncData, Report, ReportState
 
 
 class TaskState(Enum):
@@ -27,6 +28,7 @@ class ITask(ABC):
         self.handle: object = None
         self.continious: bool = _continious
         self.name: str = _name
+        self.timer: Timer = Timer()
 
     @abstractmethod
     def Start(self):
@@ -58,20 +60,21 @@ class FileWriterTask(ITask):
 
     def Start(self):
         self.status = TaskState.RUNNING
+        self.timer.Start()
         try:
-            with open(self.file_path, 'a+') as f:
+            with open(self.file_path, 'a+', encoding="utf-8") as f:
                 f_writer = csv.writer(f)
                 f.seek(0)
                 if not f.read(1):
                     # file is empty
-                    f_writer.writerow(["BRnum", "Row", "URL", "Status"])
+                    f_writer.writerow(["BRnum", "Status", "Row", "URL"])
                     Logger().Trace("Filefile header written")
 
                 for report in self.reports:
                     row = [report.name,
+                           report.status.name,
                            report.id,
-                           report.url,
-                           report.status.name]
+                           report.url]
                     f_writer.writerow(row)
                     Logger().Trace(("Row written to file:"
                                     f" \"{self.file_path}\""))
@@ -79,6 +82,7 @@ class FileWriterTask(ITask):
             Logger().Error(f"Exception: {e}")
 
     def Stop(self):
+        self.timer.Stop()
         self.status = TaskState.DONE
 
     def ReadData(self):
@@ -90,6 +94,7 @@ class FileReaderTask(ITask):
     """
 
     def __init__(self, _file_path: str,
+                 _pdf_dir: str,
                  _name: str = "FileReader"):
         """Contructs FileReader task to run async.
 
@@ -101,6 +106,7 @@ class FileReaderTask(ITask):
         """
         super().__init__(_name, False)
         self.file_path = _file_path
+        self.pdf_dir = _pdf_dir
         self.report_state = ReportSyncState()
         self.status = TaskState.IDLE
 
@@ -108,31 +114,39 @@ class FileReaderTask(ITask):
         """Read the file and process it .
         """
         self.status = TaskState.RUNNING
+        self.timer.Start()
         try:
             df = pd.ExcelFile(self.file_path).parse()
             for index, row in df.iterrows():
+
                 url: str = str(row['Pdf_URL'])
                 status: ReportState = ReportState.INIT
+                # Validate url
                 if not self.ValidateURL(url):
                     url = "None"
                     status = ReportState.NOT_DOWNLOADED
+                # check if file is already downloaded
+                if self.FileExists(f"{self.pdf_dir}/{row['BRnum']}.pdf"):
+                    status = ReportState.DOWNLOADED
+                    Logger().Trace(f"File already downloaded: "
+                                   f"\"{self.pdf_dir}/{row['BRnum']}.pdf\"")
+
                 report = Report(name=row['BRnum'], id=index,
                                 url=url,
                                 status=status)
                 Logger().Trace(f"Read entry:\n {report.name} - {report.url}")
-                self.report_state.Write(report)
+                self.report_state.Append(report)
             Logger().Info((f"{self.name} read {self.report_state.Count()}"
                            f" rows from \"{self.file_path}\""))
             self.Stop()
         except Exception as e:
             Logger().Error(f"Exception: {e}, on file read {self.file_path}")
-            report = self.report_state.Read()
-            report.status = ReportState.NOT_DOWNLOADED
-            self.report_state.Write(report)
+            self.status = TaskState.ERROR
 
     def Stop(self):
         """Stops the task.
         """
+        self.timer.Stop()
         self.status = TaskState.DONE
 
     def ReadData(self) -> list[Report]:
@@ -141,10 +155,13 @@ class FileReaderTask(ITask):
         Returns:
             list[Report]: list of documents to download
         """
-        return self.report_state.Read()
+        return self.report_state.Read().reports
 
     def ValidateURL(self, url: str) -> bool:
         return url != "" and url != "nan" and url[:4] == "http"
+
+    def FileExists(self, path: str) -> bool:
+        return os.path.exists(path)
 
 
 class URLDownloaderTask(ITask):
@@ -153,7 +170,7 @@ class URLDownloaderTask(ITask):
     def __init__(self, _report: Report, _out_dir: str):
         super().__init__(f"Download: {_report.name} task")
         self.report_state: ReportSyncState = ReportSyncState()
-        self.report_state.Write(_report)
+        self.report_state.Append(_report)
         self.out_dir: str = _out_dir
         self.status: TaskState = TaskState.IDLE
 
@@ -161,39 +178,54 @@ class URLDownloaderTask(ITask):
         """Tries to downloads the pdf and reports the status.
         """
         self.status = TaskState.RUNNING
-        report: Report = self.report_state.Read()[0]
+        self.timer.Start()
+
+        report_data: ReportSyncData = self.report_state.Read()
         context = ssl.create_default_context(cafile=certifi.where())
-        pdf_file = f"{self.out_dir}/{report.name}.pdf"
+
+        pdf_file = f"{self.out_dir}/{report_data.reports[0].name}.pdf"
+        dir_path = os.path.dirname(pdf_file)
+
+        if dir_path and not os.path.exists(dir_path):
+            os.makedirs(dir_path)
+
         try:
-            if report.status == ReportState.STAGED:
+            if report_data.reports[0].status == ReportState.STAGED:
                 # Try to download file
-                response = urllib.request.urlopen(report.url, context=context)                
+                response = urllib.request.urlopen(
+                    report_data.reports[0].url,
+                    context=context,
+                    timeout=10)
                 with open(pdf_file, "wb") as out_file:
                     out_file.write(response.read())
                     # Validate pdf by reading first page
                     reader = PdfReader(pdf_file)
                     _ = reader.pages[0].extract_text()
 
-                report.status = ReportState.DOWNLOADED
+                report_data.reports[0].status = ReportState.DOWNLOADED
 
-            Logger().Trace(f" File \"{report.url}\" successfully downloaded")
+            Logger().Trace(f"File \"{report_data.reports[0].url}\" "
+                           "successfully downloaded")
         except Exception as e:
             Logger().Warn(f"Exception: {e},"
-                          f" when trying to download: {report.url}")
+                          f" when trying to download: "
+                          f"{report_data.reports[0].url}")
 
             if os.path.exists(pdf_file):
                 os.remove(os.path.abspath(pdf_file))
-            report.status = ReportState.NOT_DOWNLOADED
+            report_data.reports[0].status = ReportState.NOT_DOWNLOADED
             self.status = TaskState.ERROR
         finally:
-            if report.status == ReportState.STAGED:
+            if report_data.reports[0].status == ReportState.STAGED:
                 # should not happen
-                Logger().Error(f"Unhandler report {report.name}")
-        self.report_state.Write(report)
+                Logger().Error(f"Unhandler report "
+                               f"{report_data.reports[0].name}")
+        self.report_state.Write(report_data)
 
     def Stop(self):
         """Stops the task.
         """
+        self.timer.Stop()
         self.status = TaskState.DONE
 
     def ReadData(self):
@@ -209,6 +241,7 @@ class LoggerTask(ITask):
 
     def Start(self):
         self.status = TaskState.RUNNING
+        self.timer.Start()
         while self.continious:
             while self.state.Count() > 0:
                 entry = self.state.Pop()
@@ -223,6 +256,7 @@ class LoggerTask(ITask):
             self.Print(entry)
             self.WriteFile(entry)
         self.continious = False
+        self.timer.Stop()
         self.status = TaskState.DONE
 
     def ReadData(self):

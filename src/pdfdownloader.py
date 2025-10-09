@@ -87,6 +87,7 @@ class PDFDownloader:
         """
         self.status = ApplicationState.INITIALIZING
         self.is_running: bool = True
+        self.sig_int_received: bool = False
 
         self.config = conf
 
@@ -95,7 +96,9 @@ class PDFDownloader:
         self.task_handler = ThreadPoolHandler(self.config.concurrent_tasks)
 
         # Read file task
-        self.read_task = FileReaderTask(self.config.in_file_path)
+        self.read_task = FileReaderTask(
+            self.config.in_file_path,
+            self.config.out_dir_path)
         self.reports: list[Report] = []
 
         # Download task
@@ -107,11 +110,11 @@ class PDFDownloader:
         self.task_handler.Start(self.logger_task)
 
         Logger().Info("----- PDF-Downloader -----")
-        Logger().Info(" Configuration:")
-        Logger().Info(f" * Input file: \"{self.config.in_file_path}\"")
-        Logger().Info(f" * Output dir: \"{self.config.out_dir_path}\"")
+        Logger().Info("Configuration:")
+        Logger().Info(f"* Input file: \"{self.config.in_file_path}\"")
+        Logger().Info(f"* Output dir: \"{self.config.out_dir_path}\"")
         Logger().Info(
-            f" * Number of concurrent tasks: {self.config.concurrent_tasks}")
+            f"* Number of concurrent tasks: {self.config.concurrent_tasks}")
 
     def Run(self):
         """Continuously run the application .
@@ -124,7 +127,7 @@ class PDFDownloader:
             match self.status:
                 case ApplicationState.READ:
                     if self.task_handler.IsDone(self.read_task):
-                        Logger().Info(f" {self.read_task.name} task completed")
+                        Logger().Info(f"{self.read_task.name} task completed")
                         self.reports = self.read_task.ReadData()
                         self.report_queue = \
                             [item for item in self.reports
@@ -134,7 +137,7 @@ class PDFDownloader:
                             self.status = ApplicationState.SHUTDOWN
                         else:
                             Logger().Info((
-                                f" {self.files_to_download}"
+                                f"{self.files_to_download}"
                                 " documents to download"))
                             self.status = ApplicationState.DOWNLOAD
                 case ApplicationState.DOWNLOAD:
@@ -142,7 +145,7 @@ class PDFDownloader:
                         Logger().Info(
                             (" All files have been downloaded to dir"
                              f"{self.config.out_dir_path}"))
-                        Logger().Info((f" Writing {len(self.reports)}"
+                        Logger().Info((f"Writing {len(self.reports)}"
                                        f" entries to {self.config.out_file}"))
                         task = FileWriterTask(self.reports,
                                               self.config.out_file)
@@ -150,10 +153,10 @@ class PDFDownloader:
                         self.status = ApplicationState.WRITE
                 case ApplicationState.WRITE:
                     if self.FilesWritten():
-                        Logger().Info(" All files have been written")
+                        Logger().Info("All files have been written")
                         self.status = ApplicationState.SHUTDOWN
                 case ApplicationState.SHUTDOWN:
-                    Logger().Info(" Shutting down program")
+                    Logger().Info("Shutting down program")
                     self.task_handler.StopAllTasks()
                     self.is_running = False
             time.sleep(0.1)
@@ -172,7 +175,7 @@ class PDFDownloader:
             report.status = ReportState.STAGED
             task = URLDownloaderTask(report, self.config.out_dir_path)
             downloaded_files = self.files_to_download - len(self.report_queue)
-            Logger().Info((f" Downloading: {report.name}.pdf"
+            Logger().Info((f"Downloading: {report.name}.pdf"
                            f" ({downloaded_files}/{self.files_to_download})"))
             self.task_handler.Start(task)
         if len(self.report_queue) == 0 \
@@ -195,14 +198,44 @@ class PDFDownloader:
         """Handle the SIGINT signal .
 
         Args:
-            signum ([type]): unused
-            frame ([type]): unused
+            signum (int): unused
+            frame (int): unused
         """
-        Logger().Trace("Shutting down application")
-        self.status = ApplicationState.SHUTDOWN
+        # Only process first sig int
+        if self.sig_int_received:
+            return
+
+        Logger().Info("Shutting down signal received")
+        if self.status == ApplicationState.DOWNLOAD:
+            # Cancel all downloads and write result
+            Logger().Info(f"Stopping running tasks: "
+                          f"{self.task_handler.ActiveTaskCount()-1}")
+            # stop all running download tasks
+            running_tasks = self.task_handler.GetRunningTasks()
+            for task in running_tasks:
+                if not task.name == self.logger_task.name:
+                    self.task_handler.Stop(task)
+
+            # wait for tasks to stop/
+            # blocking is fine under shutdown sequence
+            while self.task_handler.ActiveTaskCount() > 1:
+                time.sleep(0.1)
+
+            Logger().Info("All download tasks has stopped")
+            Logger().Info((f"Writing {len(self.reports)}"
+                           f" entries to {self.config.out_file}"))
+            # Write results before stopping application
+            task = FileWriterTask(self.reports,
+                                  self.config.out_file)
+            self.task_handler.Start(task)
+            self.status = ApplicationState.WRITE
+        else:
+            self.status = ApplicationState.SHUTDOWN
+        self.sig_int_received = True
 
     def ParseArgs() -> Config:
-        parser = argparse.ArgumentParser(description="PDF downloader program")
+        parser = argparse.ArgumentParser(
+            description="PDF downloader program. It excepts ")
         group = parser.add_mutually_exclusive_group(required=True)
         group.add_argument("-c", "--config",
                            type=str,
@@ -231,8 +264,8 @@ class PDFDownloader:
            args.tasks or
            args.verbose):
             parser.error(
-                "Cannot use config file "
-                "together with the other arguments")
+                    "Cannot use config file "
+                    "together with the other arguments")
             return None
         return Config.Create(args)
 

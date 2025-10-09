@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 class ISyncState(ABC):
     def __init__(self):
         self.lock = threading.Lock()
+        self.elapsed_time = 0
 
     @abstractmethod
     def Read(self):
@@ -16,6 +17,14 @@ class ISyncState(ABC):
 
     @abstractmethod
     def Write(self, state):
+        pass
+
+    @abstractmethod
+    def Append(self, state):
+        pass
+
+    @abstractmethod
+    def Count(self, state):
         pass
 
 
@@ -35,19 +44,30 @@ class Report:
     status: ReportState
 
 
+@dataclass
+class ReportSyncData:
+    reports: list[Report]
+    duration: float
+
+
 class ReportSyncState(ISyncState):
     def __init__(self):
         super().__init__()
         self.reports: list[Report] = []
+        self.data = ReportSyncData([], 0)
 
-    def Read(self) -> list[Report]:
+    def Read(self) -> ReportSyncData:
         with self.lock:
-            return self.reports.copy()
+            return self.data
 
-    def Write(self, _report: Report):
+    def Write(self, data: ReportSyncData):
         with self.lock:
-            self.reports.append(_report)
+            self.data = data
+
+    def Append(self, _report: Report):
+        with self.lock:
+            self.data.reports.append(_report)
 
     def Count(self):
         with self.lock:
-            return len(self.reports)
+            return len(self.data.reports)

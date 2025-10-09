@@ -23,6 +23,12 @@ class ITaskHandler(ABC):
         pass
 
     @abstractmethod
+    def GetRunningTasks(self) -> list[ITask]:
+        ''' Virtual method to be overidden
+        '''
+        pass
+
+    @abstractmethod
     def IsRunning(self, task: ITask) -> bool:
         ''' Virtual method to be overidden
         '''
@@ -63,11 +69,11 @@ class ThreadPoolHandler(ITaskHandler):
             task.handle.add_done_callback(partial(self.TaskDoneCB, task))
             self.running_tasks.append(task)
             # self.active_tasks = self.active_tasks + 1
-            Logger().Trace((f" Task {task.name} started."
+            Logger().Trace((f"Task {task.name} started."
                             f"{len(self.running_tasks)} running."))
             return True
         except Exception as e:
-            Logger().Error(f" Task {task.name} raised exception: {e}")
+            Logger().Error(f"Task {task.name} raised exception: {e}")
             return False
 
     def Stop(self, task: ITask) -> bool:
@@ -94,6 +100,9 @@ class ThreadPoolHandler(ITaskHandler):
     def ActiveTaskCount(self) -> int:
         return len(self.running_tasks)
 
+    def GetRunningTasks(self) -> list[ITask]:
+        return self.running_tasks
+
     def StopAllTasks(self):
         # Signal to stop
         for task in self.running_tasks:
@@ -103,9 +112,9 @@ class ThreadPoolHandler(ITaskHandler):
             time.sleep(0.1)
 
     def TaskDoneCB(self, task: ITask, future: Future):
-        # for t in self.running_tasks:
-        #     if t.name == task.name:
+
         task.Stop()
         self.running_tasks.remove(task)
-        Logger().Trace((f" Task {task.name} stopped."
+        Logger().Trace((f"Task {task.name} stopped. Duration: "
+                        f"{task.timer.DurationMS():.1f} (ms)."
                         f" Running task(s) {len(self.running_tasks)}"))

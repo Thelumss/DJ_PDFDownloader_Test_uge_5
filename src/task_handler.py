@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, Future
 from functools import partial
+import time
 from task import ITask, TaskState
 from logger import Logger
 
@@ -43,6 +44,10 @@ class ITaskHandler(ABC):
     def ActiveTaskCount(self) -> int:
         pass
 
+    @abstractmethod
+    def StopAllTasks(self):
+        pass
+
 
 class ThreadPoolHandler(ITaskHandler):
     def __init__(self, n_tasks: int):
@@ -68,6 +73,7 @@ class ThreadPoolHandler(ITaskHandler):
     def Stop(self, task: ITask) -> bool:
         ''' Virtual method to be overidden
         '''
+        task.Stop()
         return task.handle.cancel()
 
     def IsRunning(self, task: ITask) -> bool:
@@ -87,6 +93,14 @@ class ThreadPoolHandler(ITaskHandler):
 
     def ActiveTaskCount(self) -> int:
         return len(self.running_tasks)
+
+    def StopAllTasks(self):
+        # Signal to stop
+        for task in self.running_tasks:
+            self.Stop(task)
+        # Wait for tasks to stop
+        while self.ActiveTaskCount() > 0:
+            time.sleep(0.1)
 
     def TaskDoneCB(self, task: ITask, future: Future):
         # for t in self.running_tasks:

@@ -1,17 +1,20 @@
 import threading
 from enum import Enum
 from dataclasses import dataclass
+from abc import ABC, abstractmethod
 
 
-class ISyncState:
+class ISyncState(ABC):
     def __init__(self):
         self.lock = threading.Lock()
 
+    @abstractmethod
     def Read(self):
         '''
         '''
         pass
 
+    @abstractmethod
     def Write(self, state):
         pass
 
@@ -48,5 +51,3 @@ class ReportSyncState(ISyncState):
     def Count(self):
         with self.lock:
             return len(self.reports)
-
-

@@ -2,10 +2,11 @@ from enum import Enum
 import signal
 import time
 import argparse
+import yaml
 from collections import deque
 from logger import Logger, LogLevel
 from task_handler import ThreadPoolHandler
-from task import FileReaderTask, FileWriterTask, URLDownloaderTask
+from task import FileReaderTask, FileWriterTask, URLDownloaderTask, LoggerTask
 from state import Report, ReportState
 
 
@@ -20,12 +21,58 @@ class ApplicationState(Enum):
 
 
 class Config:
-    def __init__(self, args: list[str]):
-        self.in_file_path = args.in_file
-        self.out_file = args.out_file
-        self.out_dir_path = args.out_pdf_dir
-        self.concurrent_tasks = args.tasks
-        self.log_level = LogLevel.TRACE if args.verbose else LogLevel.INFO
+    def __init__(self,
+                 _in_file: str,
+                 _out_file: str,
+                 _out_pdf_dir: str,
+                 _log_level: bool,
+                 _n_tasks: int):
+        self.in_file_path = _in_file
+        self.out_file = _out_file
+        self.out_dir_path = _out_pdf_dir
+        self.log_level = LogLevel.TRACE if _log_level\
+            else LogLevel.INFO
+        self.concurrent_tasks = _n_tasks
+
+    @classmethod
+    def Create(cls,  *args, **kwargs) -> object | None:
+        if args[0].config:
+            yml = Config.LoadYMLFile(args[0].config)
+            if not yml:
+                return None
+            return cls(
+                _in_file=yml['in_file'],
+                _out_file=yml['out_file'],
+                _out_pdf_dir=yml['out_pdf_dir'],
+                _log_level=yml['verbose'],
+                _n_tasks=yml['tasks'])
+        if args[0].in_file:
+
+            # Default params if optional args is None
+            out_file = args[0].out_file\
+                if args[0].out_file else "data/output.csv"
+            out_dir_path = args[0].out_pdf_dir\
+                if args[0].out_pdf_dir else "data/out"
+            log_level = True\
+                if args[0].verbose\
+                else False
+            tasks = args[0].tasks\
+                if args[0].tasks else 10
+
+            return cls(
+                _in_file=args[0].in_file,
+                _out_file=out_file,
+                _out_pdf_dir=out_dir_path,
+                _log_level=log_level,
+                _n_tasks=tasks)
+        return None
+
+    @staticmethod
+    def LoadYMLFile(file_path):
+        with open(file_path, 'r') as f:
+            data = yaml.load(f, Loader=yaml.SafeLoader)
+            return data
+        return None
 
 
 class PDFDownloader:
@@ -33,6 +80,11 @@ class PDFDownloader:
     '''
 
     def __init__(self, conf: Config):
+        """Initialize the application .
+
+        Args:
+            conf (Config): config build on arguments given to program
+        """
         self.status = ApplicationState.INITIALIZING
         self.is_running: bool = True
 
@@ -50,6 +102,10 @@ class PDFDownloader:
         self.download_task_queue: deque[URLDownloaderTask] = deque()
         self.report_queue: deque[Report] = deque()
 
+        # Setup logger task
+        self.logger_task = LoggerTask(Logger().GetState())
+        self.task_handler.Start(self.logger_task)
+
         Logger().Info("----- PDF-Downloader -----")
         Logger().Info(" Configuration:")
         Logger().Info(f" * Input file: \"{self.config.in_file_path}\"")
@@ -58,6 +114,8 @@ class PDFDownloader:
             f" * Number of concurrent tasks: {self.config.concurrent_tasks}")
 
     def Run(self):
+        """Continuously run the application .
+        """
 
         self.status = ApplicationState.READ
         self.task_handler.Start(self.read_task)
@@ -91,17 +149,23 @@ class PDFDownloader:
                         self.task_handler.Start(task)
                         self.status = ApplicationState.WRITE
                 case ApplicationState.WRITE:
-                    if self.RefillWriteQueue():
+                    if self.FilesWritten():
                         Logger().Info(" All files have been written")
                         self.status = ApplicationState.SHUTDOWN
                 case ApplicationState.SHUTDOWN:
                     Logger().Info(" Shutting down program")
+                    self.task_handler.StopAllTasks()
                     self.is_running = False
             time.sleep(0.1)
 
     def RefillDownloadQueue(self) -> bool:
-        while self.task_handler.ActiveTaskCount() \
-              < self.config.concurrent_tasks:
+        """Refill the queue of files to download .
+
+        Returns:
+            bool: true if all files are downloaded
+        """
+        while self.task_handler.ActiveTaskCount()\
+                < self.config.concurrent_tasks + 1:
             if len(self.report_queue) == 0:
                 break
             report = self.report_queue.pop()
@@ -112,44 +176,71 @@ class PDFDownloader:
                            f" ({downloaded_files}/{self.files_to_download})"))
             self.task_handler.Start(task)
         if len(self.report_queue) == 0 \
-           and self.task_handler.ActiveTaskCount() == 0:
+           and self.task_handler.ActiveTaskCount() == 1:
             return True
         return False
 
-    def RefillWriteQueue(self) -> bool:
-        if self.task_handler.ActiveTaskCount() == 0:
+    def FilesWritten(self) -> bool:
+        """Checks running tasks.
+
+        Returns:
+            bool: true if only 1 task is running (logger task)
+            otherwise false
+        """
+        if self.task_handler.ActiveTaskCount() == 1:
             return True
         return False
-
-    def DownloadStatus(self) -> int:
-        entries_to_download = \
-            [item for item in self.reports if item.status == ReportState.INIT]
-        return len(entries_to_download)
 
     def HandleSigint(self, signum, frame):
+        """Handle the SIGINT signal .
+
+        Args:
+            signum ([type]): unused
+            frame ([type]): unused
+        """
         Logger().Trace("Shutting down application")
-        self.is_running = False
         self.status = ApplicationState.SHUTDOWN
+
+    def ParseArgs() -> Config:
+        parser = argparse.ArgumentParser(description="PDF downloader program")
+        group = parser.add_mutually_exclusive_group(required=True)
+        group.add_argument("-c", "--config",
+                           type=str,
+                           help="Path to config *.yml file")
+
+        group.add_argument("-i", "--in_file",
+                           type=str,
+                           help="Path to input file in .xlsx format")
+
+        parser.add_argument("-d", "--out_pdf_dir",
+                            type=str,
+                            help="Directory to store the downloaded pdf tiles")
+        parser.add_argument("-o", "--out_file",
+                            type=str,
+                            help="Path to output file to store results")
+        parser.add_argument("-n", "--tasks",
+                            nargs='?', type=int,
+                            help="Number of tasks to run in parallel")
+        parser.add_argument("-v", "--verbose",
+                            action='store_true',
+                            help="Verbose output for program")
+        args = parser.parse_args()
+        if args.config and (args.in_file or
+           args.out_pdf_dir or
+           args.out_file or
+           args.tasks or
+           args.verbose):
+            parser.error(
+                "Cannot use config file "
+                "together with the other arguments")
+            return None
+        return Config.Create(args)
 
 
 if __name__ == "__main__":
-    # argument parsing
-    parser = argparse.ArgumentParser(description="PDF downloader program")
-    parser.add_argument("-i", "--in_file",
-                        type=str,
-                        help="Path to input file in .xlsx format")
-    parser.add_argument("-d", "--out_pdf_dir",
-                        type=str,
-                        help="Directory to store the downloaded pdf tiles")
-    parser.add_argument("-o", "--out_file",
-                        type=str,
-                        help="Path to output file to store results")
-    parser.add_argument("-n", "--tasks",
-                        nargs='?', type=int,
-                        help="Number of tasks to run in parallel")
-    parser.add_argument("-v", "--verbose",
-                        action='store_true', help="Verbose output for program")
-    args = parser.parse_args()
-    config = Config(args)
-    app = PDFDownloader(config)
-    app.Run()
+    config = PDFDownloader.ParseArgs()
+    if config:
+        app = PDFDownloader(config)
+        app.Run()
+    else:
+        print("Invalid Config")

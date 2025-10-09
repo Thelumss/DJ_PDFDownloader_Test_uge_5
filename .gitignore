@@ -2,5 +2,5 @@
 .venv
 __pycache__/
 data/out/*
-data/status.csv
+data/output.csv
 todo

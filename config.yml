@@ -1,0 +1,5 @@
+in_file: "data/GRI_2017_2020 (1) - Copy.xlsx"
+out_file: "data/status.csv"
+out_pdf_dir: "data/out"
+tasks: 10
+verbose: True

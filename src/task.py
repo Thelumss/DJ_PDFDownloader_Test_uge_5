@@ -1,11 +1,14 @@
 from enum import Enum
 from abc import ABC, abstractmethod
 import pandas as pd
+from PyPDF2 import PdfReader
 import urllib.request
 import certifi
 import ssl
 import csv
-from logger import Logger
+import os
+import time
+from logger import Logger, LogEntry, LogLevel, bcolors, LogSyncState
 from state import ReportSyncState, Report, ReportState
 
 
@@ -27,7 +30,7 @@ class ITask(ABC):
 
     @abstractmethod
     def Start(self):
-        ''' Virtual method to be overidden
+        ''' Starts the task and run the main loop
         '''
         pass
 
@@ -160,19 +163,27 @@ class URLDownloaderTask(ITask):
         self.status = TaskState.RUNNING
         report: Report = self.report_state.Read()[0]
         context = ssl.create_default_context(cafile=certifi.where())
+        pdf_file = f"{self.out_dir}/{report.name}.pdf"
         try:
             if report.status == ReportState.STAGED:
-                response = urllib.request.urlopen(report.url, context=context)
-                out_file = open(f"{self.out_dir}/{report.name}.pdf", "wb")
-                out_file.write(response.read())
+                # Try to download file
+                response = urllib.request.urlopen(report.url, context=context)                
+                with open(pdf_file, "wb") as out_file:
+                    out_file.write(response.read())
+                    # Validate pdf by reading first page
+                    reader = PdfReader(pdf_file)
+                    _ = reader.pages[0].extract_text()
+
                 report.status = ReportState.DOWNLOADED
 
             Logger().Trace(f" File \"{report.url}\" successfully downloaded")
         except Exception as e:
             Logger().Warn(f"Exception: {e},"
                           f" when trying to download: {report.url}")
-            report.status = ReportState.NOT_DOWNLOADED
 
+            if os.path.exists(pdf_file):
+                os.remove(os.path.abspath(pdf_file))
+            report.status = ReportState.NOT_DOWNLOADED
             self.status = TaskState.ERROR
         finally:
             if report.status == ReportState.STAGED:
@@ -192,11 +203,47 @@ class URLDownloaderTask(ITask):
 class LoggerTask(ITask):
     ''' Logger task. Imlpements ITask
     '''
-    def __init__(self):
-        super().__init__()
+    def __init__(self, _state: LogSyncState):
+        super().__init__("Log Task", True)
+        self.state = _state
 
     def Start(self):
         self.status = TaskState.RUNNING
+        while self.continious:
+            while self.state.Count() > 0:
+                entry = self.state.Pop()
+                self.Print(entry)
+                self.WriteFile(entry)
+            time.sleep(0.1)
 
     def Stop(self):
+        # clear queue
+        while self.state.Count() > 0:
+            entry = self.state.Pop()
+            self.Print(entry)
+            self.WriteFile(entry)
+        self.continious = False
         self.status = TaskState.DONE
+
+    def ReadData(self):
+        return self.state.Read()
+
+    def Print(self, entry: LogEntry):
+        prefix: str = ""
+
+        match entry.severity:
+            case LogLevel.TRACE:
+                prefix = bcolors.OKBLUE
+            case LogLevel.INFO:
+                prefix = bcolors.OKGREEN
+            case LogLevel.WARN:
+                prefix = bcolors.WARNING
+            case LogLevel.ERROR:
+                prefix = bcolors.FAIL
+            case LogLevel.FATAL:
+                prefix = bcolors.FAIL + bcolors.UNDERLINE
+        print(f"{prefix}{entry}{bcolors.ENDC}")
+
+    def WriteFile(self, entry: LogEntry):
+        # TODO: rotating log file
+        pass

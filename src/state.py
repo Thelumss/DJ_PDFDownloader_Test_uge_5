@@ -5,26 +5,42 @@ from abc import ABC, abstractmethod
 
 
 class ISyncState(ABC):
+    """Interface to provide sync functionality for
+    safe communication between tasks(threads).
+    """
     def __init__(self):
         self.lock = threading.Lock()
         self.elapsed_time = 0
 
     @abstractmethod
     def Read(self):
-        '''
-        '''
+        """Reads the state object.
+        """
         pass
 
     @abstractmethod
     def Write(self, state):
+        """Writes the state object.
+
+        Args:
+            state (StateObject): imlpementation specific state
+        """
         pass
 
     @abstractmethod
-    def Append(self, state):
+    def Append(self, entry):
+        """Append an entry state data .
+
+        Args:
+            state (state data object list entry):
+            imlpementation specific list entry
+        """
         pass
 
     @abstractmethod
-    def Count(self, state):
+    def Count(self):
+        """Return the number of data list entries .
+        """
         pass
 
 
@@ -68,6 +84,6 @@ class ReportSyncState(ISyncState):
         with self.lock:
             self.data.reports.append(_report)
 
-    def Count(self):
+    def Count(self) -> int:
         with self.lock:
             return len(self.data.reports)

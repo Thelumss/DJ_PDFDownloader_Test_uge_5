@@ -10,7 +10,9 @@ import os
 import time
 from timer import Timer
 from logger import Logger, LogEntry, LogLevel, bcolors, LogSyncState
-from state import ReportSyncState, ReportSyncData, Report, ReportState
+from logger import LogSyncData
+from state import ReportSyncState
+from state import ReportSyncData, Report, ReportState
 
 
 class TaskState(Enum):
@@ -32,25 +34,32 @@ class ITask(ABC):
 
     @abstractmethod
     def Start(self):
-        ''' Starts the task and run the main loop
+        ''' Starts the task (task entry point).
+        Virtual function to be overridden.
         '''
         pass
 
     @abstractmethod
     def Stop(self):
-        ''' Virtual method to be overidden
+        ''' Performs the clean up for a task
+        and marks its status as Done.
+        Virtual function to be overridden.
         '''
         pass
 
     @abstractmethod
-    def ReadData(self):
-        ''' Virtual method to be overidden
-        '''
+    def ReadData(self) -> object:
+        """Returns the sync state data of the task.
+
+        Returns:
+            SyncDataObj: returns the implementation specific data object
+        """
         pass
 
 
 class FileWriterTask(ITask):
-    ''' File writer task. Implements ITask.
+    ''' File writer task for writing output csv file with download results.
+    Implements ITask.
     '''
     def __init__(self, _reports: list[Report], _file_path: str,
                  _name: str = "FileWriter"):
@@ -59,6 +68,8 @@ class FileWriterTask(ITask):
         self.reports = _reports
 
     def Start(self):
+        """Starts the task.
+        """
         self.status = TaskState.RUNNING
         self.timer.Start()
         try:
@@ -82,10 +93,18 @@ class FileWriterTask(ITask):
             Logger().Error(f"Exception: {e}")
 
     def Stop(self):
+        """Stops the task.
+        """
         self.timer.Stop()
         self.status = TaskState.DONE
 
     def ReadData(self):
+        """Returns the report data.
+        TODO: use a sync object instead
+
+        Returns:
+            list[Report]: reports held
+        """
         return self.reports
 
 
@@ -150,7 +169,8 @@ class FileReaderTask(ITask):
         self.status = TaskState.DONE
 
     def ReadData(self) -> list[Report]:
-        """Reads the report state .
+        """Returns the report list.
+        TODO: let this task hold a syncstate object
 
         Returns:
             list[Report]: list of documents to download
@@ -158,9 +178,25 @@ class FileReaderTask(ITask):
         return self.report_state.Read().reports
 
     def ValidateURL(self, url: str) -> bool:
+        """Checks if a URL is valid .
+
+        Args:
+            url (str): http or https
+
+        Returns:
+            bool: true if valid
+        """
         return url != "" and url != "nan" and url[:4] == "http"
 
     def FileExists(self, path: str) -> bool:
+        """Returns true if the specified file exists in the local filesystem .
+
+        Args:
+            path (str): path to file
+
+        Returns:
+            bool: true if exists
+        """
         return os.path.exists(path)
 
 
@@ -233,13 +269,16 @@ class URLDownloaderTask(ITask):
 
 
 class LoggerTask(ITask):
-    ''' Logger task. Imlpements ITask
+    ''' Logger task which writes to std out and log file.
+    Imlpements ITask
     '''
     def __init__(self, _state: LogSyncState):
         super().__init__("Log Task", True)
         self.state = _state
 
     def Start(self):
+        """Starts the logger task.
+        """
         self.status = TaskState.RUNNING
         self.timer.Start()
         while self.continious:
@@ -250,6 +289,8 @@ class LoggerTask(ITask):
             time.sleep(0.1)
 
     def Stop(self):
+        """Stop the task .
+        """
         # clear queue
         while self.state.Count() > 0:
             entry = self.state.Pop()
@@ -259,7 +300,12 @@ class LoggerTask(ITask):
         self.timer.Stop()
         self.status = TaskState.DONE
 
-    def ReadData(self):
+    def ReadData(self) -> LogSyncData:
+        """Reads the state of the logger.
+
+        Returns:
+            [type]: [description]
+        """
         return self.state.Read()
 
     def Print(self, entry: LogEntry):

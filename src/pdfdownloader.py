@@ -68,7 +68,7 @@ class Config:
         return None
 
     @staticmethod
-    def LoadYMLFile(file_path):
+    def LoadYMLFile(file_path) -> dict:
         with open(file_path, 'r') as f:
             data = yaml.load(f, Loader=yaml.SafeLoader)
             return data

@@ -67,23 +67,46 @@ class ReportSyncData:
 
 
 class ReportSyncState(ISyncState):
+    """Imlpementation of ISyncState providing safe communication between
+    threads.
+    """
     def __init__(self):
         super().__init__()
         self.reports: list[Report] = []
         self.data = ReportSyncData([], 0)
 
     def Read(self) -> ReportSyncData:
+        """Reads the report sync data.
+
+        Returns:
+            ReportSyncData: current sync data
+        """
         with self.lock:
             return self.data
 
     def Write(self, data: ReportSyncData):
+        """Overwrites the given data to the sync data.
+
+        Args:
+            data (ReportSyncData):
+        """
         with self.lock:
             self.data = data
 
     def Append(self, _report: Report):
+        """Append a new report to the report list .
+
+        Args:
+            _report (Report):
+        """
         with self.lock:
             self.data.reports.append(_report)
 
     def Count(self) -> int:
+        """Returns the number of reports in the data object.
+
+        Returns:
+            int: [description]
+        """
         with self.lock:
             return len(self.data.reports)

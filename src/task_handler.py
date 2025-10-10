@@ -95,7 +95,7 @@ class ITaskHandler(ABC):
 
 class ThreadPoolHandler(ITaskHandler):
     """ThreadPoolHandler class. implementation of ITaskHandler.
-    """    
+    """
     def __init__(self, n_tasks: int):
         super().__init__(n_tasks)
         self.executor = ThreadPoolExecutor(self.concurrent_tasks)
@@ -153,8 +153,13 @@ class ThreadPoolHandler(ITaskHandler):
         """
         # Signal to stop
         for task in self.running_tasks:
-            self.Stop(task)
+            if not task.name == "Log Task":
+                self.Stop(task)
         # Wait for tasks to stop
+        while self.ActiveTaskCount() > 1:
+            time.sleep(0.1)
+        # Stop logger task
+        self.Stop(self.running_tasks[0])
         while self.ActiveTaskCount() > 0:
             time.sleep(0.1)
 

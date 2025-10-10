@@ -21,6 +21,9 @@ class ApplicationState(Enum):
 
 
 class Config:
+    """Configuration class for the application.
+    Uses a builder pattern with Create Method.
+    """
     def __init__(self,
                  _in_file: str,
                  _out_file: str,
@@ -36,6 +39,12 @@ class Config:
 
     @classmethod
     def Create(cls,  *args, **kwargs) -> object | None:
+        """Creates a new instance of the class.
+        Parses process arguments .
+
+        Returns:
+            Config:
+        """
         if args[0].config:
             yml = Config.LoadYMLFile(args[0].config)
             if not yml:
@@ -69,6 +78,14 @@ class Config:
 
     @staticmethod
     def LoadYMLFile(file_path) -> dict:
+        """Loads a YAML file at the specified path.
+
+        Args:
+            file_path (str): path to config file
+
+        Returns:
+            dict: configuration entries
+        """
         with open(file_path, 'r') as f:
             data = yaml.load(f, Loader=yaml.SafeLoader)
             return data
@@ -76,7 +93,8 @@ class Config:
 
 
 class PDFDownloader:
-    ''' Top level class for handling application related tasks
+    ''' Top level class for application.
+    This class control tasks and program flow.
     '''
 
     def __init__(self, conf: Config):
@@ -106,7 +124,7 @@ class PDFDownloader:
         self.report_queue: deque[Report] = deque()
 
         # Setup logger task
-        self.logger_task = LoggerTask(Logger().GetState())
+        self.logger_task = LoggerTask(Logger().GetState(), write_log=True)
         self.task_handler.Start(self.logger_task)
 
         Logger().Info("----- PDF-Downloader -----")
@@ -128,6 +146,8 @@ class PDFDownloader:
                 case ApplicationState.READ:
                     if self.task_handler.IsDone(self.read_task):
                         Logger().Info(f"{self.read_task.name} task completed")
+
+                        # Get reports and queue them for download
                         self.reports = self.read_task.ReadData()
                         self.report_queue = \
                             [item for item in self.reports
@@ -147,6 +167,8 @@ class PDFDownloader:
                              f"{self.config.out_dir_path}"))
                         Logger().Info((f"Writing {len(self.reports)}"
                                        f" entries to {self.config.out_file}"))
+
+                        # Wrrite the results to output file
                         task = FileWriterTask(self.reports,
                                               self.config.out_file)
                         self.task_handler.Start(task)
@@ -234,6 +256,11 @@ class PDFDownloader:
         self.sig_int_received = True
 
     def ParseArgs() -> Config:
+        """Parses command line arguments.
+
+        Returns:
+            Config: [description]
+        """
         parser = argparse.ArgumentParser(
             description=("PDF downloader program for extracting urls"
                          " from a xlsx file "

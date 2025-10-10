@@ -1,5 +1,5 @@
 in_file: "data/GRI_2017_2020 (1) - Copy.xlsx" # Input file
 out_file: "data/test.csv"      # Output file
 out_pdf_dir: "data/test"       # Directory for the downloaded pdfs
-tasks: 20                              # Concurrent downloads
+tasks: 10                              # Concurrent downloads
 verbose: True                          # Log verbosity 

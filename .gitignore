@@ -4,5 +4,7 @@ __pycache__/
 data/out/*
 data/*.csv
 data/*.py
+logs/*
 todo
 docs/*.docx
+docs/*.pptx

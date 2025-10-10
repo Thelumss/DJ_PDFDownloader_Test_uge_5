@@ -8,6 +8,7 @@ import ssl
 import csv
 import os
 import time
+from datetime import datetime
 from timer import Timer
 from logger import Logger, LogEntry, LogLevel, bcolors, LogSyncState
 from logger import LogSyncData
@@ -272,9 +273,12 @@ class LoggerTask(ITask):
     ''' Logger task which writes to std out and log file.
     Imlpements ITask
     '''
-    def __init__(self, _state: LogSyncState):
+    def __init__(self, _state: LogSyncState, write_log: bool = True):
         super().__init__("Log Task", True)
-        self.state = _state
+        self.state: LogSyncState = _state
+        now = datetime.now()
+        self.log_file: str = f"logs/log_{now.strftime("%Y%m%d_%H%M%S")}.txt"
+        self.log_to_file: bool = write_log
 
     def Start(self):
         """Starts the logger task.
@@ -325,5 +329,6 @@ class LoggerTask(ITask):
         print(f"{prefix}{entry}{bcolors.ENDC}")
 
     def WriteFile(self, entry: LogEntry):
-        # TODO: rotating log file
-        pass
+        with open(self.log_file, "a+") as file:
+            file.write(f"{entry.__repr__()}\n")
+            file.close()

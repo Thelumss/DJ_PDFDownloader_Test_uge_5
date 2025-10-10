@@ -1,5 +1,5 @@
 # PDF Downloader
-
+PDF downloader program for extracting urls from a xlsx file and downloading them and outputting results to a file. 
 The program excepts the Excel file to have the following rows headers:
 - `BRnum`
 - `Pdf_URL`
@@ -45,13 +45,15 @@ verbose: True                          # Log verbosity
 
 **Run program with config file**
 ```
->> python src/pdfdownloader --config config.yml
+>> python src/pdfdownloader.py --config config.yml
 ```
 
 **Run program without config file**
 ```
->> python src/pdfdownloader --in_file data/file.xlsx
+>> python src/pdfdownloader.py --in_file data/file.xlsx
 ```
 The other arguments are optional and has the following default values:  
-- `--out_dir <PATH_TO_DIRECTORY>`
-- `--out_dir <PATH_TO_DIRECTORY>`
+- `-d <PATH_TO_DIRECTORY>` : data/out  
+- `-o <PATH_TO_OUTPUT_FILE>` : data/output.csv  
+- `-n <NUMBER_OF_TASKS>` : 10
+- `-v` : Not set

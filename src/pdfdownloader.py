@@ -235,7 +235,12 @@ class PDFDownloader:
 
     def ParseArgs() -> Config:
         parser = argparse.ArgumentParser(
-            description="PDF downloader program. It excepts ")
+            description=("PDF downloader program for extracting urls"
+                         " from a xlsx file "
+                         "and downloading them and "
+                         "outputting results to a file. "
+                         "It excepts the row headers"
+                         "  \'BRnum\' and \'PDF_Url\'"))
         group = parser.add_mutually_exclusive_group(required=True)
         group.add_argument("-c", "--config",
                            type=str,

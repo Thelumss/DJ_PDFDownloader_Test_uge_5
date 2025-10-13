@@ -277,7 +277,7 @@ class LoggerTask(ITask):
         super().__init__("Log Task", True)
         self.state: LogSyncState = _state
         now = datetime.now()
-        self.log_file: str = f"logs/log_{now.strftime("%Y%m%d_%H%M%S")}.txt"
+        self.log_file: str = f"logs/log_{now.strftime('%Y%m%d_%H%M%S')}.txt"
         self.log_to_file: bool = write_log
 
     def Start(self):
@@ -329,6 +329,7 @@ class LoggerTask(ITask):
         print(f"{prefix}{entry}{bcolors.ENDC}")
 
     def WriteFile(self, entry: LogEntry):
+        os.makedirs("logs", exist_ok=True)
         with open(self.log_file, "a+") as file:
             file.write(f"{entry.__repr__()}\n")
             file.close()

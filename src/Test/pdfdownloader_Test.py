@@ -1,10 +1,13 @@
 from itertools import chain, repeat
+import os
+import sys
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch,MagicMock
+from collections import deque
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from pdfdownloader import PDFDownloader
 from logger import LogLevel
-from collections import deque
 from state import ReportState
 
 

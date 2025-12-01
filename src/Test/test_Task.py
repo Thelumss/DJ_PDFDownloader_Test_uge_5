@@ -23,7 +23,6 @@ class URLDownloaderTask_Test(unittest.TestCase):
         self.obj = FileReaderTask(self.dummy_conf)
 
 
-    import unittest
 from unittest.mock import patch, MagicMock
 import pandas as pd
 

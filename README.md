@@ -59,9 +59,11 @@ The other arguments are optional and has the following default values:
 - `-v` : Not set
 
 
-**temp**
-runs all of the unittest 
+**testing**
+runs all of the unittest
+```
 >> python -m unittest discover -s .\src\Test\ -p "test*.py"
 
 runs 
 >> python -m unittest discover -s .\src\Test\ -p "integration_*.py"
+```

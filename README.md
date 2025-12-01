@@ -64,6 +64,5 @@ runs all of the unittest
 ```
 >> python -m unittest discover -s .\src\Test\ -p "test*.py"
 
-runs 
 >> python -m unittest discover -s .\src\Test\ -p "integration_*.py"
 ```
